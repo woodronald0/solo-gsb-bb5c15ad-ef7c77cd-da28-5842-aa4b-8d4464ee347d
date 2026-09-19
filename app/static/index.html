@@ -52,6 +52,23 @@
         </div>
       </div>
 
+      <!-- 循环冲突复核 -->
+      <div id="conflict-card" class="card conflict hidden">
+        <h3>🔄 循环冲突复核</h3>
+        <p class="conflict-desc">检测到循环胜负：<strong id="conflict-path"></strong></p>
+        <p class="muted">点击环上任一组合（或矩阵中的红色格）即可重新判定，进度统计不受影响：</p>
+        <div id="conflict-pairs" class="chips"></div>
+        <div id="revise-panel" class="hidden">
+          <p id="revise-title"></p>
+          <div class="revise-actions">
+            <button id="revise-a" class="primary"></button>
+            <button id="revise-tie" class="tie-inline">平局</button>
+            <button id="revise-b" class="primary"></button>
+            <button id="revise-cancel">取消</button>
+          </div>
+        </div>
+      </div>
+
       <div class="grid">
         <div class="card">
           <h3>实时排名（Schulze）</h3>

@@ -237,6 +237,37 @@ table.matrix th {
 .cell-tie  { color: var(--yellow); }
 .cell-pending { color: var(--muted); }
 .cell-self { color: #3a4560; }
+.cell-conflict {
+  background: rgba(255, 107, 107, 0.16);
+  box-shadow: inset 0 0 0 2px var(--red);
+  cursor: pointer;
+}
+.cell-conflict:hover { background: rgba(255, 107, 107, 0.28); }
+
+/* ---------- 循环冲突复核 ---------- */
+.card.conflict { border-color: rgba(255, 107, 107, 0.55); }
+.conflict-desc { margin: 0 0 0.3rem; }
+#conflict-path { color: var(--red); word-break: break-all; }
+.conflict-chip {
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text);
+  border-color: rgba(255, 107, 107, 0.5);
+}
+.conflict-chip:hover { background: rgba(255, 107, 107, 0.12); }
+.conflict-chip.selected { outline: 2px solid var(--red); }
+#revise-panel {
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--card-border);
+}
+#revise-title { margin: 0 0 0.7rem; font-weight: 600; }
+.revise-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+.tie-inline {
+  color: var(--yellow);
+  border-color: rgba(245, 197, 66, 0.4);
+}
+.tie-inline:hover:not(:disabled) { background: rgba(245, 197, 66, 0.12); }
 
 /* ---------- 提示条 ---------- */
 #toast {

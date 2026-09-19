@@ -5,6 +5,7 @@ const STORAGE_KEY = "decision-desk-session";
 
 let state = null;
 let busy = false;
+let selectedPair = null; // 冲突环上待重新判定的组合 {a, b}
 
 /* ---------- 工具 ---------- */
 
@@ -59,6 +60,7 @@ function render() {
   renderRanking();
   renderPending();
   renderMatrix();
+  renderConflict();
 }
 
 function renderRanking() {
@@ -100,9 +102,24 @@ function renderPending() {
 
 const SYMBOLS = { win: "✓", lose: "✗", tie: "＝", pending: "·", self: "—" };
 
+function conflictCells() {
+  // 冲突环上每个组合对应的两个矩阵格（i:j 与 j:i）
+  const cells = new Set();
+  if (state.conflict) {
+    const pos = new Map(state.candidates.map((name, i) => [name, i]));
+    for (const e of state.conflict.edges) {
+      const i = pos.get(e.a);
+      const j = pos.get(e.b);
+      cells.add(`${i}:${j}`).add(`${j}:${i}`);
+    }
+  }
+  return cells;
+}
+
 function renderMatrix() {
   const wrap = $("#matrix-wrap");
   wrap.innerHTML = "";
+  const conflicts = conflictCells();
   const table = document.createElement("table");
   table.className = "matrix";
 
@@ -125,16 +142,74 @@ function renderMatrix() {
     th.textContent = state.candidates[i];
     th.title = state.candidates[i];
     tr.appendChild(th);
-    for (const cell of cells) {
+    cells.forEach((cell, j) => {
       const td = document.createElement("td");
       td.className = `cell-${cell}`;
       td.textContent = SYMBOLS[cell];
+      if (conflicts.has(`${i}:${j}`)) {
+        td.classList.add("cell-conflict");
+        td.title = "循环冲突组合，点击重新判定";
+        td.addEventListener("click", () => {
+          selectConflictPair({
+            a: state.candidates[Math.min(i, j)],
+            b: state.candidates[Math.max(i, j)],
+          });
+        });
+      }
       tr.appendChild(td);
-    }
+    });
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
   wrap.appendChild(table);
+}
+
+/* ---------- 循环冲突复核 ---------- */
+
+function renderConflict() {
+  const card = $("#conflict-card");
+  const conflict = state.conflict;
+  if (!conflict) {
+    selectedPair = null;
+    card.classList.add("hidden");
+    return;
+  }
+  card.classList.remove("hidden");
+  $("#conflict-path").textContent = [...conflict.cycle, conflict.cycle[0]].join(" → ");
+
+  // 选中组合已不在当前环上（如经撤销/重判）时收起面板
+  if (selectedPair && !conflict.edges.some((e) => e.a === selectedPair.a && e.b === selectedPair.b)) {
+    selectedPair = null;
+  }
+
+  const box = $("#conflict-pairs");
+  box.innerHTML = "";
+  for (const e of conflict.edges) {
+    const chip = document.createElement("button");
+    const winner = e.result === "a" ? e.a : e.b;
+    const loser = e.result === "a" ? e.b : e.a;
+    chip.className =
+      "chip conflict-chip" +
+      (selectedPair && selectedPair.a === e.a && selectedPair.b === e.b ? " selected" : "");
+    chip.textContent = `${winner} 胜 ${loser}`;
+    chip.title = "点击重新判定该组合";
+    chip.addEventListener("click", () => selectConflictPair(e));
+    box.appendChild(chip);
+  }
+
+  const panel = $("#revise-panel");
+  panel.classList.toggle("hidden", !selectedPair);
+  if (selectedPair) {
+    $("#revise-title").textContent = `重新判定：${selectedPair.a} ↔ ${selectedPair.b}`;
+    $("#revise-a").textContent = `「${selectedPair.a}」胜`;
+    $("#revise-b").textContent = `「${selectedPair.b}」胜`;
+  }
+}
+
+function selectConflictPair(pair) {
+  selectedPair = { a: pair.a, b: pair.b };
+  renderConflict();
+  $("#conflict-card").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 /* ---------- 数据操作 ---------- */
@@ -185,6 +260,25 @@ async function undo() {
   }
 }
 
+async function revise(result) {
+  if (busy || !state || !selectedPair) return;
+  busy = true;
+  try {
+    state = await api(`/api/sessions/${state.session_id}/judgments`, {
+      method: "PUT",
+      body: JSON.stringify({ a: selectedPair.a, b: selectedPair.b, result }),
+    });
+    selectedPair = null;
+    render();
+    toast("判定已更新，排名与冲突已重算");
+  } catch (e) {
+    toast(e.message);
+    await refresh();
+  } finally {
+    busy = false;
+  }
+}
+
 async function resetRound() {
   if (busy || !state) return;
   if (!confirm("确定要清空本轮全部判断记录吗？")) return;
@@ -219,6 +313,7 @@ async function startSession() {
       body: JSON.stringify({ candidates: names }),
     });
     localStorage.setItem(STORAGE_KEY, state.session_id);
+    selectedPair = null;
     render();
   } catch (e) {
     toast(e.message);
@@ -229,6 +324,7 @@ function newRound() {
   if (!confirm("开始新一轮评审？当前进度将从本浏览器中移除（服务器记录仍保留）。")) return;
   localStorage.removeItem(STORAGE_KEY);
   state = null;
+  selectedPair = null;
   showSetup();
 }
 
@@ -247,6 +343,13 @@ $("#btn-tie").addEventListener("click", () => judge("tie"));
 $("#undo-btn").addEventListener("click", undo);
 $("#reset-btn").addEventListener("click", resetRound);
 $("#new-btn").addEventListener("click", newRound);
+$("#revise-a").addEventListener("click", () => revise("a"));
+$("#revise-tie").addEventListener("click", () => revise("tie"));
+$("#revise-b").addEventListener("click", () => revise("b"));
+$("#revise-cancel").addEventListener("click", () => {
+  selectedPair = null;
+  renderConflict();
+});
 
 document.addEventListener("keydown", (e) => {
   if ($("#review-view").classList.contains("hidden")) return;

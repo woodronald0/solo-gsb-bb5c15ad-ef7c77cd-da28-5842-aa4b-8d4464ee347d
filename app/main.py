@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from .conflict import shortest_cycle
 from .schulze import rank_groups, strongest_paths
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -130,6 +131,18 @@ def load_state(conn: sqlite3.Connection, session_id: str) -> dict:
                 cells.append("lose")
         matrix.append(cells)
 
+    # 循环冲突：严格胜负边中的最短有向环（平局与未比较不成边）
+    conflict = None
+    cycle = shortest_cycle(candidates, history)
+    if cycle is not None:
+        order = {name: i for i, name in enumerate(candidates)}
+        edges = []
+        for i, winner in enumerate(cycle):
+            loser = cycle[(i + 1) % len(cycle)]
+            a, b = (winner, loser) if order[winner] < order[loser] else (loser, winner)
+            edges.append({"a": a, "b": b, "result": "a" if winner == a else "b"})
+        conflict = {"cycle": cycle, "edges": edges}
+
     return {
         "session_id": session_id,
         "candidates": candidates,
@@ -138,6 +151,7 @@ def load_state(conn: sqlite3.Connection, session_id: str) -> dict:
         "pending": pending,
         "ranking": groups,
         "matrix": matrix,
+        "conflict": conflict,
         "can_undo": bool(history),
     }
 
@@ -196,6 +210,38 @@ def judge(sid: str, payload: JudgmentCreate):
             "INSERT INTO judgments (session_id, a, b, result) VALUES (?, ?, ?, ?)",
             (sid, payload.a, payload.b, payload.result),
         )
+        conn.commit()
+        return load_state(conn, sid)
+    finally:
+        conn.close()
+
+
+@app.put("/api/sessions/{sid}/judgments")
+def revise(sid: str, payload: JudgmentCreate):
+    """循环冲突复核：原位替换一条已判定组合的记录。
+
+    UPDATE 不改变行 id 与记录条数，因此进度总数、已完成数与
+    撤销顺序均保持不变；返回重算后的完整状态（排名、待比较、下一冲突）。
+    """
+    conn = get_conn()
+    try:
+        state = load_state(conn, sid)
+        order = {name: i for i, name in enumerate(state["candidates"])}
+        if payload.a == payload.b or payload.a not in order or payload.b not in order:
+            raise HTTPException(422, "无效的比较组合")
+        # 统一按候选录入顺序存储；result 始终相对请求中先出现的 a 解释
+        a, b = sorted((payload.a, payload.b), key=order.__getitem__)
+        if payload.result == "tie":
+            result = "tie"
+        else:
+            winner = payload.a if payload.result == "a" else payload.b
+            result = "a" if winner == a else "b"
+        cur = conn.execute(
+            "UPDATE judgments SET result = ? WHERE session_id = ? AND a = ? AND b = ?",
+            (result, sid, a, b),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(409, "该组合尚未判定，请通过正常流程完成首次比较")
         conn.commit()
         return load_state(conn, sid)
     finally:
