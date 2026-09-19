@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .schulze import rank_groups, strongest_paths
+from .schulze import rank_groups, shortest_strict_cycle, strongest_paths
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -90,6 +90,7 @@ def load_state(conn: sqlite3.Connection, session_id: str) -> dict:
     if row is None:
         raise HTTPException(status_code=404, detail="会话不存在或已被删除")
     candidates: list[str] = json.loads(row["candidates"])
+    order = {name: i for i, name in enumerate(candidates)}
 
     history: list[dict] = []
     judged: dict[tuple[str, str], str] = {}
@@ -130,6 +131,25 @@ def load_state(conn: sqlite3.Connection, session_id: str) -> dict:
                 cells.append("lose")
         matrix.append(cells)
 
+    # 循环冲突复核：只由严格胜负边构成的最短有向环（平局、未比较不成边）
+    cycle = shortest_strict_cycle(candidates, history)
+    conflict = None
+    if cycle is not None:
+        edges = []
+        for i in range(len(cycle)):
+            x, y = cycle[i], cycle[(i + 1) % len(cycle)]
+            a, b = (x, y) if order[x] < order[y] else (y, x)
+            result = judged[(a, b)]
+            edges.append(
+                {
+                    "a": a,
+                    "b": b,
+                    "result": result,
+                    "winner": a if result == "a" else b,
+                }
+            )
+        conflict = {"cycle": cycle, "edges": edges}
+
     return {
         "session_id": session_id,
         "candidates": candidates,
@@ -138,6 +158,7 @@ def load_state(conn: sqlite3.Connection, session_id: str) -> dict:
         "pending": pending,
         "ranking": groups,
         "matrix": matrix,
+        "conflict": conflict,
         "can_undo": bool(history),
     }
 
@@ -196,6 +217,50 @@ def judge(sid: str, payload: JudgmentCreate):
             "INSERT INTO judgments (session_id, a, b, result) VALUES (?, ?, ?, ?)",
             (sid, payload.a, payload.b, payload.result),
         )
+        conn.commit()
+        return load_state(conn, sid)
+    finally:
+        conn.close()
+
+
+@app.post("/api/sessions/{sid}/rejudge")
+def rejudge(sid: str, payload: JudgmentCreate):
+    """循环冲突复核：原位替换环上某一已判断组合的记录。
+
+    不新增、不删除记录（进度 done/total 不变），仅把该组合的结果改写为
+    新选择，随后立即重算排名、待比较项与下一条冲突。
+    """
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT candidates FROM sessions WHERE id = ?", (sid,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "会话不存在或已被删除")
+        candidates: list[str] = json.loads(row["candidates"])
+        order = {name: i for i, name in enumerate(candidates)}
+        if payload.a not in order or payload.b not in order or payload.a == payload.b:
+            raise HTTPException(409, "请选择有效的候选项组合")
+
+        # 存储约定：a/b 始终按候选项录入顺序（序号小的在前）；
+        # result 相对传入顺序表达胜者，顺序交换时需同步翻转 a/b。
+        if order[payload.a] < order[payload.b]:
+            lo, hi, result = payload.a, payload.b, payload.result
+        else:
+            lo, hi = payload.b, payload.a
+            result = {"a": "b", "b": "a", "tie": "tie"}[payload.result]
+
+        state = load_state(conn, sid)
+        conflict = state["conflict"]
+        if conflict is None or not any(
+            e["a"] == lo and e["b"] == hi for e in conflict["edges"]
+        ):
+            raise HTTPException(409, "只能复核当前冲突环上的已判断组合")
+
+        cur = conn.execute(
+            "UPDATE judgments SET result = ? WHERE session_id = ? AND a = ? AND b = ?",
+            (result, sid, lo, hi),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(409, "该组合尚未判断，无法复核")
         conn.commit()
         return load_state(conn, sid)
     finally:

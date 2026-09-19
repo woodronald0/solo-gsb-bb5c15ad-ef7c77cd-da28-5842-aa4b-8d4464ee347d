@@ -41,6 +41,66 @@ def strongest_paths(candidates: list[str], judgments: list[dict]) -> list[list[f
     return p
 
 
+def shortest_strict_cycle(
+    candidates: list[str], judgments: list[dict]
+) -> list[str] | None:
+    """在严格胜负边构成的有向图中找出最短有向环。
+
+    - 仅「严格胜」成边：result == 'a' 时 a -> b，result == 'b' 时 b -> a；
+      平局与未比较均不成边。
+    - 存在多个同长度环时按候选项录入顺序稳定选择：优先以最早录入的
+      候选项为环起点，同起点下按 BFS 邻接点升序选出字典序最小的路径。
+    返回起点不重复追加的环（如 ["A", "B", "C"] 表示 A→B→C→A），无环返回 None。
+    """
+    n = len(candidates)
+    idx = {name: i for i, name in enumerate(candidates)}
+    adj: list[list[int]] = [[] for _ in range(n)]
+    for j in judgments:
+        a, b, result = idx[j["a"]], idx[j["b"]], j["result"]
+        if result == "a":
+            adj[a].append(b)
+        elif result == "b":
+            adj[b].append(a)
+    for neighbors in adj:
+        neighbors.sort()
+
+    # 以每个候选项为起点（按录入顺序），只经过序号不小于起点的顶点，
+    # 这样每个环恰在其最早成员处被枚举一次，且天然实现稳定选择。
+    for start in range(n):
+        parent: dict[int, int] = {start: -1}
+        frontier = [start]
+        depth = 0
+        while frontier:
+            nxt: list[int] = []
+            found: tuple[int, int] | None = None
+            for u in frontier:  # 同层按父路径字典序（BFS 入队序）展开
+                for v in adj[u]:
+                    if v < start:
+                        continue
+                    if v == start and u != start:
+                        found = (u, v)
+                        break
+                    if v not in parent:
+                        parent[v] = u
+                        nxt.append(v)
+                if found:
+                    break
+            if found:
+                u = found[0]
+                cyc = []
+                node = u
+                while node != -1:
+                    cyc.append(node)
+                    node = parent[node]
+                cyc.reverse()  # start → … → u
+                return [candidates[i] for i in cyc]
+            frontier = nxt
+            depth += 1
+            if depth > n:  # 防御性兜底，理论上路径不会超过 n-1
+                break
+    return None
+
+
 def rank_groups(candidates: list[str], p: list[list[float]]) -> list[list[str]]:
     """按 Schulze 关系把候选项分成有序的并列组（名次最优的组在前）。"""
     n = len(candidates)

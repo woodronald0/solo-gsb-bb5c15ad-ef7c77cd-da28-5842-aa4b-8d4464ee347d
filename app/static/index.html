@@ -52,6 +52,16 @@
         </div>
       </div>
 
+      <div id="conflict-card" class="card conflict-card hidden">
+        <h3>⚠️ 检测到循环冲突</h3>
+        <p class="muted">
+          严格胜负关系形成了相互矛盾的有向环（平局与未比较不参与成环）。
+          点击下方环上的任一组合，重新选择胜者或平局即可解除。
+        </p>
+        <div id="conflict-path" class="conflict-path"></div>
+        <p id="conflict-next" class="muted hint"></p>
+      </div>
+
       <div class="grid">
         <div class="card">
           <h3>实时排名（Schulze）</h3>
@@ -66,10 +76,32 @@
       <div class="card">
         <h3>胜负矩阵</h3>
         <p class="muted">行 vs 列：✓ 行胜 · ✗ 行负 · ＝ 平局 · · 未比较</p>
+        <p id="matrix-conflict-hint" class="muted hidden">
+          🟥 红框 / 红字标出当前最短冲突环，点击环上的任一组合可重新判断；
+          反向格（红色虚线框）同样可点。
+        </p>
         <div id="matrix-wrap"></div>
       </div>
     </section>
   </main>
+
+  <!-- 循环冲突复核弹窗 -->
+  <div id="review-modal" class="modal-backdrop hidden">
+    <div class="modal">
+      <h3>复核冲突组合</h3>
+      <p id="review-context" class="muted"></p>
+      <div class="duel">
+        <button id="review-btn-a" class="duel-btn"></button>
+        <span class="vs">VS</span>
+        <button id="review-btn-b" class="duel-btn"></button>
+      </div>
+      <button id="review-btn-tie" class="tie-btn">平局 / 难分伯仲</button>
+      <p class="muted hint">原位替换该组合的原判断，进度总数不变。Esc 取消。</p>
+      <div class="toolbar">
+        <button id="review-cancel">取消</button>
+      </div>
+    </div>
+  </div>
 
   <div id="toast" class="hidden"></div>
   <script src="/static/app.js"></script>

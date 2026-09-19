@@ -238,6 +238,83 @@ table.matrix th {
 .cell-pending { color: var(--muted); }
 .cell-self { color: #3a4560; }
 
+/* ---------- 循环冲突 ---------- */
+.conflict-card {
+  border-color: rgba(255, 107, 107, 0.55);
+  box-shadow: 0 0 0 2px rgba(255, 107, 107, 0.12);
+}
+.conflict-card h3 { color: var(--red); }
+
+.conflict-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.8rem 0 0.4rem;
+}
+.conflict-node {
+  font-weight: 700;
+  color: var(--red);
+  background: rgba(255, 107, 107, 0.1);
+  border: 1px solid rgba(255, 107, 107, 0.45);
+  border-radius: 8px;
+  padding: 0.2rem 0.6rem;
+}
+.conflict-arrow { color: var(--red); font-weight: 700; }
+
+.conflict-chips { margin-top: 0.7rem; }
+.conflict-chip {
+  color: var(--red);
+  border-color: rgba(255, 107, 107, 0.45);
+  background: rgba(255, 107, 107, 0.08);
+  font-size: 0.85rem;
+}
+.conflict-chip:hover:not(:disabled) {
+  background: rgba(255, 107, 107, 0.2);
+  border-color: var(--red);
+}
+
+th.conflict-head {
+  color: var(--red);
+  background: #3a2430;
+}
+td.conflict-edge {
+  color: var(--red);
+  font-weight: 700;
+  background: rgba(255, 107, 107, 0.18);
+  box-shadow: inset 0 0 0 2px var(--red);
+  cursor: pointer;
+}
+td.conflict-edge-rev {
+  box-shadow: inset 0 0 0 2px rgba(255, 107, 107, 0.55);
+  cursor: pointer;
+}
+td.conflict-edge:hover, td.conflict-edge-rev:hover {
+  background: rgba(255, 107, 107, 0.3);
+}
+
+/* ---------- 复核弹窗 ---------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 11, 20, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 20;
+}
+.modal {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  padding: 1.6rem 1.8rem;
+  width: 100%;
+  max-width: 640px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.55);
+}
+.modal h3 { margin-top: 0; text-align: center; }
+
 /* ---------- 提示条 ---------- */
 #toast {
   position: fixed;

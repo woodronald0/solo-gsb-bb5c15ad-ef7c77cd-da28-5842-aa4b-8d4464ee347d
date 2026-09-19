@@ -5,6 +5,7 @@ const STORAGE_KEY = "decision-desk-session";
 
 let state = null;
 let busy = false;
+let reviewPair = null; // 冲突复核弹窗当前选中的组合（规范化 a/b 顺序）
 
 /* ---------- 工具 ---------- */
 
@@ -58,6 +59,7 @@ function render() {
 
   renderRanking();
   renderPending();
+  renderConflict();
   renderMatrix();
 }
 
@@ -100,11 +102,78 @@ function renderPending() {
 
 const SYMBOLS = { win: "✓", lose: "✗", tie: "＝", pending: "·", self: "—" };
 
+/* ---------- 循环冲突 ---------- */
+
+// 组合键：按候选项录入顺序规范化，与后端存储约定一致
+function pairKey(a, b) {
+  const ia = state.candidates.indexOf(a);
+  const ib = state.candidates.indexOf(b);
+  return ia < ib ? `${a} ${b}` : `${b} ${a}`;
+}
+
+function conflictEdgeMap() {
+  const map = new Map();
+  if (state.conflict) {
+    for (const e of state.conflict.edges) map.set(pairKey(e.a, e.b), e);
+  }
+  return map;
+}
+
+function renderConflict() {
+  const card = $("#conflict-card");
+  const c = state.conflict;
+  if (!c) {
+    card.classList.add("hidden");
+    $("#matrix-conflict-hint").classList.add("hidden");
+    return;
+  }
+  card.classList.remove("hidden");
+  $("#matrix-conflict-hint").classList.remove("hidden");
+
+  const path = $("#conflict-path");
+  path.innerHTML = "";
+  c.cycle.forEach((name, i) => {
+    const node = document.createElement("span");
+    node.className = "conflict-node";
+    node.textContent = name;
+    path.appendChild(node);
+
+    const arrow = document.createElement("span");
+    arrow.className = "conflict-arrow";
+    arrow.textContent = "→";
+    path.appendChild(arrow);
+  });
+  const back = document.createElement("span");
+  back.className = "conflict-node";
+  back.textContent = c.cycle[0];
+  path.appendChild(back);
+
+  const chips = document.createElement("div");
+  chips.className = "chips conflict-chips";
+  for (const e of c.edges) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip conflict-chip";
+    chip.textContent = `✎ ${e.winner} 胜 ${e.winner === e.a ? e.b : e.a}`;
+    chip.title = `点击复核「${e.a} vs ${e.b}」`;
+    chip.addEventListener("click", () => openReview(e.a, e.b));
+    chips.appendChild(chip);
+  }
+  path.appendChild(chips);
+
+  $("#conflict-next").textContent =
+    "复核后系统会立即重算排名与待比较项；若仍有冲突，将继续提示下一条最短冲突环。";
+}
+
 function renderMatrix() {
   const wrap = $("#matrix-wrap");
   wrap.innerHTML = "";
   const table = document.createElement("table");
   table.className = "matrix";
+  const edges = conflictEdgeMap();
+  const conflictNodes = new Set(
+    state.conflict ? state.conflict.cycle : []
+  );
 
   const headRow = document.createElement("tr");
   headRow.appendChild(document.createElement("th"));
@@ -112,6 +181,7 @@ function renderMatrix() {
     const th = document.createElement("th");
     th.textContent = name;
     th.title = name;
+    if (conflictNodes.has(name)) th.classList.add("conflict-head");
     headRow.appendChild(th);
   }
   const thead = document.createElement("thead");
@@ -124,17 +194,74 @@ function renderMatrix() {
     const th = document.createElement("th");
     th.textContent = state.candidates[i];
     th.title = state.candidates[i];
+    if (conflictNodes.has(state.candidates[i])) th.classList.add("conflict-head");
     tr.appendChild(th);
-    for (const cell of cells) {
+    cells.forEach((cell, j) => {
       const td = document.createElement("td");
       td.className = `cell-${cell}`;
       td.textContent = SYMBOLS[cell];
+      if (i !== j) {
+        const edge = edges.get(pairKey(state.candidates[i], state.candidates[j]));
+        if (edge) {
+          // 有向边所在格（胜者所在行）高亮为正向，反向格为虚线提示
+          const winnerIsRow =
+            (edge.winner === edge.a && i < j) ||
+            (edge.winner === edge.b && i > j);
+          td.classList.add(winnerIsRow ? "conflict-edge" : "conflict-edge-rev");
+          td.title = `冲突环组合「${edge.a} vs ${edge.b}」，点击复核`;
+          td.setAttribute("role", "button");
+          td.addEventListener("click", () => openReview(edge.a, edge.b));
+        }
+      }
       tr.appendChild(td);
-    }
+    });
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
   wrap.appendChild(table);
+}
+
+/* ---------- 循环冲突复核 ---------- */
+
+function openReview(a, b) {
+  if (busy || !state || !state.conflict) return;
+  // 按录入顺序规范化，与后端 a/b 语义保持一致
+  const ia = state.candidates.indexOf(a);
+  const ib = state.candidates.indexOf(b);
+  reviewPair = ia < ib ? { a, b } : { a: b, b: a };
+  $("#review-context").textContent =
+    `当前最短冲突环：${state.conflict.cycle.join(" → ")} → ${state.conflict.cycle[0]}`;
+  $("#review-btn-a").textContent = reviewPair.a;
+  $("#review-btn-b").textContent = reviewPair.b;
+  $("#review-modal").classList.remove("hidden");
+}
+
+function closeReview() {
+  if (busy) return;
+  reviewPair = null;
+  $("#review-modal").classList.add("hidden");
+}
+
+async function submitReview(result) {
+  if (busy || !reviewPair) return;
+  busy = true;
+  try {
+    const { a, b } = reviewPair;
+    state = await api(`/api/sessions/${state.session_id}/rejudge`, {
+      method: "POST",
+      body: JSON.stringify({ a, b, result }),
+    });
+    reviewPair = null;
+    $("#review-modal").classList.add("hidden");
+    render();
+    toast(state.conflict ? "已替换该判断，仍存在冲突环，请继续复核" : "✓ 冲突已解除");
+  } catch (e) {
+    toast(e.message);
+    await refresh();
+    closeReview();
+  } finally {
+    busy = false;
+  }
 }
 
 /* ---------- 数据操作 ---------- */
@@ -248,8 +375,24 @@ $("#undo-btn").addEventListener("click", undo);
 $("#reset-btn").addEventListener("click", resetRound);
 $("#new-btn").addEventListener("click", newRound);
 
+$("#review-btn-a").addEventListener("click", () => submitReview("a"));
+$("#review-btn-b").addEventListener("click", () => submitReview("b"));
+$("#review-btn-tie").addEventListener("click", () => submitReview("tie"));
+$("#review-cancel").addEventListener("click", closeReview);
+$("#review-modal").addEventListener("click", (e) => {
+  if (e.target === $("#review-modal")) closeReview();
+});
+
 document.addEventListener("keydown", (e) => {
   if ($("#review-view").classList.contains("hidden")) return;
+  if (!$("#review-modal").classList.contains("hidden")) {
+    // 复核弹窗打开时拦截快捷键：← 左边胜 · → 右边胜 · ↓ 平局 · Esc 取消
+    if (e.key === "Escape") { e.preventDefault(); closeReview(); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); submitReview("a"); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); submitReview("b"); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); submitReview("tie"); }
+    return;
+  }
   if (e.ctrlKey && e.key.toLowerCase() === "z") {
     e.preventDefault();
     undo();
