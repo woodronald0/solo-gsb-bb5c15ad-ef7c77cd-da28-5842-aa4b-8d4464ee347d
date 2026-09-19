@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>两两决策台</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>⚖️ 两两决策台</h1>
+    <p class="subtitle">逐对比较 · Schulze 最强路径法实时排名</p>
+  </header>
+
+  <main>
+    <!-- 录入候选项 -->
+    <section id="setup-view" class="card">
+      <h2>录入候选项</h2>
+      <p class="muted">每行一个候选项，共 3～12 个，名称不可重复。</p>
+      <textarea id="candidates-input" rows="8" placeholder="方案 A&#10;方案 B&#10;方案 C&#10;方案 D"></textarea>
+      <div class="row">
+        <span id="setup-count" class="muted"></span>
+        <button id="start-btn" class="primary">开始评审</button>
+      </div>
+    </section>
+
+    <!-- 评审台 -->
+    <section id="review-view" class="hidden">
+      <div class="card">
+        <div class="progress-row">
+          <div class="progress"><div id="progress-bar"></div></div>
+          <span id="progress-text" class="muted"></span>
+        </div>
+
+        <div id="current-pair">
+          <h2>你更倾向哪一个？</h2>
+          <div class="duel">
+            <button id="btn-a" class="duel-btn" title="快捷键 ←"></button>
+            <span class="vs">VS</span>
+            <button id="btn-b" class="duel-btn" title="快捷键 →"></button>
+          </div>
+          <button id="btn-tie" class="tie-btn" title="快捷键 ↓">平局 / 难分伯仲</button>
+          <p class="muted hint">快捷键：← 左边胜 · → 右边胜 · ↓ 平局 · Ctrl+Z 撤销</p>
+        </div>
+
+        <div id="done-banner" class="hidden">🎉 全部组合已比较完毕，以下为最终排名。</div>
+
+        <div class="toolbar">
+          <button id="undo-btn">↩︎ 撤销上一判断</button>
+          <button id="reset-btn">🗑 重置本轮</button>
+          <button id="new-btn">✚ 新一轮</button>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h3>实时排名（Schulze）</h3>
+          <div id="ranking"></div>
+        </div>
+        <div class="card">
+          <h3>尚未比较的组合</h3>
+          <div id="pending-list" class="chips"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>胜负矩阵</h3>
+        <p class="muted">行 vs 列：✓ 行胜 · ✗ 行负 · ＝ 平局 · · 未比较</p>
+        <div id="matrix-wrap"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="hidden"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
